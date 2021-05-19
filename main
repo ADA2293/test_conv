@@ -1,0 +1,109 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+use IEEE.STD_LOGIC_SIGNED.ALL;
+
+entity test_fir is
+	GENERIC
+		(
+		bits_t :       				integer := 12;																												
+		N_coeff:        			     integer := 69																														
+		);
+	Port
+		(
+		Clk:										in	STD_LOGIC;																													
+		Rst:										in	std_logic;																											
+	  i_In:									in	std_logic;																													
+		i_t    :					in	std_logic_vector( (bits_t  - 1) downto 0);	
+		o_t    :					out	std_logic_vector( (bits_t  - 1) downto 0);	
+		oSample :								out	std_logic																														
+		);
+end test_fir;
+
+architecture Behavioral of test_fir is
+
+	type tShiftArray is array (integer range 0 to (N_coeff - 1)) of std_logic_vector ( (bits_t  - 1) downto 0);
+	signal shift_data_t    :			tShiftArray			:= (others => (others => '0'));						
+	signal mult_data_t     :			tShiftArray			:= (others => (others => '0'));											
+	type tAddArray is array (integer range 0 to (N_coeff - 1)) of std_logic_vector ( (bits_t  + 7 - 1) downto 0);
+	signal add_in_t:						tAddArray						:= (others => (others => '0'));											
+	type Add_array_0 is array (integer range 0 to 15) of std_logic_vector ( (bits_t  + 7 - 1) downto 0);
+	signal add_data_t_0    :						Add_array_0						:= (others => (others => '0'));											
+	type Add_array_1 is array (integer range 0 to 3) of std_logic_vector ( (bits_t  + 7 - 1) downto 0);
+	signal add_data_t_1:						Add_array_1						:= (others => (others => '0'));											
+	signal add_data_t_2:						std_logic_vector ( (bits_t  + 7 - 1) downto 0)	:= (others => '0');	
+	
+	type tCoefArray is array (integer range 0 to (N_coeff - 1)) of std_logic_vector ( 15 downto 0);
+	constant i_CoefTable  :				tCoefArray				:= 
+		(
+		x"FF64", x"FF35", x"FFA6", x"0067", x"00E1", x"00A6", x"FFDC", x"FF27", x"FF2D", x"0000", x"00F6", x"0123", x"0027", x"FEA7", x"FDF1", x"FF02",
+		x"017A", x"0399", x"0351", x"0000", x"FB66", x"F8F0", x"FB6C", x"0294", x"0A4D", x"0C9D", x"05A7", x"F741", x"E995", x"E7BB", x"F9A0", x"1E9D",
+		x"4C1C", x"7189", x"7FFF", x"7189", x"4C1C", x"1E9D", x"F9A0", x"E7BB", x"E995", x"F741", x"05A7", x"0C9D", x"0A4D", x"0294", x"FB6C", x"F8F0",
+		x"FB66", x"0000", x"0351", x"0399", x"017A", x"FF02", x"FDF1", x"FEA7", x"0027", x"0123", x"00F6", x"0000", x"FF2D", x"FF27", x"FFDC", x"00A6",
+		x"00E1", x"0067", x"FFA6", x"FF35", x"FF64"
+		);						
+
+	COMPONENT mult_gen_0
+		PORT
+			(
+			CLK :									IN	STD_LOGIC;
+			A :										IN	STD_LOGIC_VECTOR((bits_t  - 1) DOWNTO 0);
+			B :										IN	STD_LOGIC_VECTOR((bits_t  - 1) DOWNTO 0);
+			CE :									IN	STD_LOGIC;
+			P :										OUT	STD_LOGIC_VECTOR((bits_t  - 1) DOWNTO 0)
+			);
+	END COMPONENT;
+begin
+
+	  GEN_mult_d_comput_t:
+	for z in 0 to ( N_coeff - 1) generate
+		mult_Ix: mult_gen_0
+		PORT MAP
+			(
+			CLK =>								Clk,
+			A =>									i_CoefTable  (z)( 15 downto (16 - bits_t )),
+			B =>									shift_data_t    (z),
+			CE =>									i_In,
+			P =>									mult_data_t     (z)
+			);
+	end generate   GEN_mult_d_comput_t;  
+	FirIn_Proc: process(Clk)
+		begin		
+			if	rising_edge(Clk) then
+				oSample  <=																'0';																					
+				if Rst = '1' then			
+				elsif i_In = '1' then					
+					for N in 1 to (N_coeff - 1) loop
+						shift_data_t    (N) <=									shift_data_t    (N - 1);	
+					end loop;
+					shift_data_t    (0) <=										i_t    ;
+					
+				for N in 0 to (N_coeff - 1) loop
+						for S in (bits_t  + 7 - 1) downto (bits_t )loop
+							add_in_t(N)(S) <=	mult_data_t     (N)(bits_t  - 1);						
+						end loop; 
+						add_in_t(N)((bits_t  - 1) downto 0) <=		mult_data_t     (N);					
+					end loop; 					
+					
+					for N in 0 to 10 loop 
+						add_data_t_0    (N) <=	add_in_t(N*4 + 0) + add_in_t(N*4 + 1) + add_in_t(N*4 + 2) + add_in_t(N*4 + 3);						
+					end loop; 
+					
+					for N in 0 to  4 loop 
+						add_data_t_0    (N+11) <=		add_in_t(44+N*5 + 0) + add_in_t(44+N*5 + 1) + add_in_t(44+N*5 + 2) + add_in_t(44+N*5 + 3) + add_in_t(44+N*5 + 4);						
+					end loop; 
+					
+					for N in 0 to 3 loop
+						add_data_t_1(N) <=	add_data_t_0    (N*4 + 0) + add_data_t_0    (N*4 + 1) + add_data_t_0    (N*4 + 2) + add_data_t_0    (N*4 + 3);						
+					end loop; 				
+					
+					add_data_t_2 <=	add_data_t_1(0) + add_data_t_1(1) + add_data_t_1(2) + add_data_t_1(3);							
+          
+          o_t     <=	add_data_t_2((bits_t  + 7 - 1) downto 7);		
+					oSample  <=	'1';		
+				end if; 
+			end if; 
+		end process FirIn_Proc;
+  
+  
+  end Behavioral;									
